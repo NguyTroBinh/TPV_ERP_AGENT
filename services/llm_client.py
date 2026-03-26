@@ -146,9 +146,9 @@ class LLMClient:
 
         # Cache tools-bound version — dùng content hash thay vì id() để ổn định
         import hashlib, json as _json
-        tools_hash = hashlib.md5(
+        tools_hash = hashlib.sha256(
             _json.dumps(tools, sort_keys=True, default=str).encode()
-        ).hexdigest()
+        ).hexdigest()[:16]
         if self._llm_with_tools is None or self._tools_hash != tools_hash:
             self._llm_with_tools = self._llm_base.bind_tools(tools)
             self._tools_hash = tools_hash

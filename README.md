@@ -21,22 +21,22 @@ Hệ thống hoạt động dựa trên vòng lặp **Reasoning and Acting (ReAc
 
 ```mermaid
 flowchart TD
-    User((Người dùng)) -->|1. Gửi câu hỏi| API[FastAPI Backend]
-    API -->|2. Kích hoạt| Agent[ReAct Orchestrator]
-    Agent <-->|3. Nạp/Lưu Lịch sử| Redis[(Redis Session)]
-    
-    Agent -->|4. Truyền Context & Tool Schemas| LLM{Mô hình LLM\n(OpenAI/Ollama)}
-    LLM -.->|5. Quyết định| Action_Direct[Trả lời trực tiếp]
-    LLM -.->|5. Quyết định| Action_Tool[Gọi Công cụ / Tools]
-    
+    User((Nguoi dung)) -->|1. Gui cau hoi| API[FastAPI Backend]
+    API -->|2. Kich hoat| Agent[ReAct Orchestrator]
+    Agent <-->|3. Nap/Luu Lich su| Redis[(Redis Session)]
+
+    Agent -->|4. Truyen Context & Tool Schemas| LLM{Mo hinh LLM<br/>OpenAI / Ollama}
+    LLM -.->|5. Quyet dinh| Action_Direct[Tra loi truc tiep]
+    LLM -.->|5. Quyet dinh| Action_Tool[Goi Cong cu / Tools]
+
     Action_Tool --> Router[Tools Registry]
-    Router -->|Tra cứu tài liệu| RAG[(Qdrant Vector DB)]
-    Router -->|Truy vấn số liệu| ERP[(PostgreSQL ERP)]
-    
-    RAG -->|6. Kết quả trích xuất| Agent
-    ERP -->|6. Kết quả SQL| Agent
-    
-    Agent -->|7. Trả lời & Sinh trích dẫn| API
+    Router -->|Tra cuu tai lieu| RAG[(Qdrant Vector DB)]
+    Router -->|Truy van so lieu| ERP[(PostgreSQL ERP)]
+
+    RAG -->|6. Ket qua trich xuat| Agent
+    ERP -->|6. Ket qua SQL| Agent
+
+    Agent -->|7. Tra loi & Sinh trich dan| API
     API -->|8. Stream Text| User
 ```
 
