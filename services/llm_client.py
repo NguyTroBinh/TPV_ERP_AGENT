@@ -172,23 +172,20 @@ class LLMClient:
         Returns:
             AIMessage — agent.py tự đọc .tool_calls hoặc .content
         """
-        lc_messages = [_to_lc_message(m) for m in messages]
         llm = self._get_llm(tools)
+        tool_names = [t["function"]["name"] for t in (tools or []) if "function" in t]
 
-        # Log user message (last user message in list)
         user_msg = ""
         for m in reversed(messages):
             if m.get("role") == "user":
                 user_msg = m.get("content", "")[:200]
                 break
 
-        tool_names = [t["function"]["name"] for t in (tools or []) if "function" in t]
-
         logger.info(
             "llm.request",
             model=settings.llm.model,
             provider=self._base_url or "default",
-            messages_count=len(lc_messages),
+            messages_count=len(messages),
             tools=tool_names or None,
             user_message=user_msg,
         )
@@ -197,14 +194,20 @@ class LLMClient:
             if settings.llm.provider == "ollama":
                 ollama_messages = [_to_ollama_message(m) for m in messages]
                 response_dict = await llm.invoke(ollama_messages, tools)
+                raw_tool_calls = _normalize_ollama_tool_calls(
+                    response_dict['message'].get('tool_calls')
+                )
+                # Set finish_reason dựa vào tool_calls để _parse_stop_reason hoạt động đúng
+                finish_reason = "tool_calls" if raw_tool_calls else "stop"
                 response = AIMessage(
                     content=response_dict['message']['content'] or "",
-                    tool_calls=_normalize_ollama_tool_calls(
-                        response_dict['message'].get('tool_calls')
-                    ),
+                    tool_calls=raw_tool_calls,
+                    response_metadata={"finish_reason": finish_reason},
                 )
             else:
+                lc_messages = [_to_lc_message(m) for m in messages]
                 response: AIMessage = await llm.ainvoke(lc_messages)
+
             stop_reason = _parse_stop_reason(response)
 
             # Token usage
@@ -223,13 +226,10 @@ class LLMClient:
                         break
 
             # Tool calls detail
-            tc_detail = []
-            if response.tool_calls:
-                for tc in response.tool_calls:
-                    tc_detail.append({
-                        "name": tc.get("name"),
-                        "args": tc.get("args"),
-                    })
+            tc_detail = [
+                {"name": tc.get("name"), "args": tc.get("args")}
+                for tc in (response.tool_calls or [])
+            ]
 
             logger.info(
                 "llm.response",
@@ -259,22 +259,23 @@ class LLMClient:
         Args:
             messages: list[dict] đầy đủ (system + history + context từ tool results)
         """
-        lc_messages = [_to_lc_message(m) for m in messages]
         llm = self._get_llm()
 
         logger.info(
             "llm.stream_start",
             model=settings.llm.model,
-            messages_count=len(lc_messages),
+            messages_count=len(messages),
         )
 
         token_count = 0
         if settings.llm.provider == "ollama":
-            async for chunk in llm.stream([_to_ollama_message(m) for m in messages]):
+            ollama_messages = [_to_ollama_message(m) for m in messages]
+            async for chunk in llm.stream(ollama_messages):
                 if chunk:
                     token_count += 1
                     yield chunk
         else:
+            lc_messages = [_to_lc_message(m) for m in messages]
             async for chunk in llm.astream(lc_messages):
                 if chunk.content:
                     token_count += 1
@@ -300,15 +301,13 @@ class LLMClient:
           2. Nếu chunk có text content → yield str ngay (real-time token)
           3. Accumulate toàn bộ chunks → cuối cùng yield AIMessage tổng hợp
         """
-        lc_messages = [_to_lc_message(m) for m in messages]
         llm = self._get_llm(tools)
-
         tool_names = [t["function"]["name"] for t in (tools or []) if "function" in t]
         logger.info(
             "llm.stream_request",
             model=settings.llm.model,
             provider=self._base_url or "default",
-            messages_count=len(lc_messages),
+            messages_count=len(messages),
             tools=tool_names or None,
         )
 
@@ -320,17 +319,21 @@ class LLMClient:
                 ollama_messages = [_to_ollama_message(m) for m in messages]
                 response_dict = await llm.invoke(ollama_messages, tools)
                 response_content = response_dict['message']['content'] or ""
-                for token in response_content.split():
-                    yield token + " "
+                # Yield từng ký tự giữ nguyên formatting thay vì split whitespace
+                yield response_content
+                raw_tool_calls = _normalize_ollama_tool_calls(
+                    response_dict['message'].get('tool_calls')
+                )
+                finish_reason = "tool_calls" if raw_tool_calls else "stop"
                 final = AIMessage(
                     content=response_content,
-                    tool_calls=_normalize_ollama_tool_calls(
-                        response_dict['message'].get('tool_calls')
-                    ),
+                    tool_calls=raw_tool_calls,
+                    response_metadata={"finish_reason": finish_reason},
                 )
                 yield final
                 return
-            
+
+            lc_messages = [_to_lc_message(m) for m in messages]
             async for chunk in llm.astream(lc_messages):
                 # Accumulate chunks to build full AIMessage
                 if accumulated is None:

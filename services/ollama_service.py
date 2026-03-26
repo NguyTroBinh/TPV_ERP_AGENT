@@ -22,5 +22,5 @@ class OllamaService:
         """
         Stream the response from the Ollama model.
         """
-        async for part in await self.client.chat(model=self.model, messages=messages, stream=True):
+        async for part in self.client.chat(model=self.model, messages=messages, stream=True):
             yield part['message']['content']
