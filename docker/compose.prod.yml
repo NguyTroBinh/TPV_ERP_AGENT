@@ -1,0 +1,193 @@
+########################################################
+# docker/compose.prod.yml — Production
+#
+# Build:  docker compose -f docker/compose.prod.yml build
+# Chạy:   docker compose -f docker/compose.prod.yml up -d
+# Dừng:   docker compose -f docker/compose.prod.yml down
+# Logs:   docker compose -f docker/compose.prod.yml logs -f app
+########################################################
+
+services:
+
+  # ── App (FastAPI + Agent) ──────────────────────────
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: erp-chatbot:${APP_VERSION:-latest}
+    container_name: erp-chatbot
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - ../.env
+    environment:
+      - ENV=production
+      - LOG_LEVEL=INFO
+    volumes:
+      - hf-cache:/app/.cache/huggingface
+    mem_limit: 4g
+    cpus: 2.0
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - erp-net
+
+  # ── Ingestion Worker ───────────────────────────────
+  ingestion:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: erp-chatbot:${APP_VERSION:-latest}
+    container_name: erp-ingestion
+    env_file:
+      - ../.env
+    environment:
+      - ENV=production
+      - LOG_LEVEL=INFO
+      - SERVICE_MODE=ingestion
+    volumes:
+      - hf-cache:/app/.cache/huggingface
+      - upload-tmp:/tmp/ingestion
+    command: >
+      uvicorn ingestion.worker:app
+      --host 0.0.0.0
+      --port 8002
+      --workers 1
+    ports:
+      - "127.0.0.1:8002:8002"
+    mem_limit: 8g
+    cpus: 2.0
+    # ── GPU (uncomment nếu có NVIDIA GPU) ────────────
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    networks:
+      - erp-net
+
+  # ── PostgreSQL ─────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: erp-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ../scripts/init-db:/docker-entrypoint-initdb.d:ro
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "30m"
+        max-file: "3"
+    networks:
+      - erp-net
+
+  # ── Redis ──────────────────────────────────────────
+  redis:
+    image: redis:7
+    container_name: erp-redis
+    restart: unless-stopped
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-data:/data
+    mem_limit: 2g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erp-net
+
+  # ── Qdrant ─────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:gpu-nvidia-latest
+    container_name: erp-qdrant
+    restart: unless-stopped
+    command: >
+      ./qdrant --config-path /qdrant/config/production.yaml
+    volumes:
+      - qdrant-data:/qdrant/storage
+      - ./config/qdrant.yaml:/qdrant/config/production.yaml:ro
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
+      - QDRANT__LOG_LEVEL=INFO
+    mem_limit: 8g
+    cpus: 2.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erp-net
+
+  # ── Nginx ──────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: erp-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - erp-net
+
+volumes:
+  pg-data:
+    name: erp-pg-prod
+  redis-data:
+    name: erp-redis-prod
+  qdrant-data:
+    name: erp-qdrant-prod
+  hf-cache:
+    name: erp-hf-cache
+  upload-tmp:
+    name: erp-upload-tmp
+
+networks:
+  erp-net:
+    driver: bridge

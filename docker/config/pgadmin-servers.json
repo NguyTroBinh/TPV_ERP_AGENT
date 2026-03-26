@@ -1,0 +1,15 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "ERP Chatbot (Dev)",
+      "Group": "Docker",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "erp_chatbot",
+      "Username": "erp_user",
+      "Password": "erp_secret",
+      "SSLMode": "prefer",
+      "SavePassword": true
+    }
+  }
+}

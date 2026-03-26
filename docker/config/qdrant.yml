@@ -1,0 +1,32 @@
+# ═══════════════════════════════════════════════════════
+# Qdrant Configuration — Production
+# Path in container: /qdrant/config/production.yaml
+# ═══════════════════════════════════════════════════════
+
+service:
+  http_port: 6333
+  grpc_port: 6334
+  api_key: ${QDRANT_API_KEY}
+
+storage:
+  storage_path: /qdrant/storage
+
+  wal:
+    wal_capacity_mb: 1024
+    wal_segments_ahead: 2
+
+  performance:
+    max_search_threads: 0
+    max_optimization_threads: 2
+
+cluster:
+  enabled: false
+
+optimizer:
+  indexing_threshold: 50000
+  flush_interval_sec: 30
+  max_segment_size_kb: 750000
+  vacuum_min_vector_number: 1000
+  default_segment_number: 2
+
+telemetry_disabled: true

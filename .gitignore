@@ -1,0 +1,25 @@
+__pycache__/
+
+# Python compiled files
+*.py[cod]
+*$py.class
+
+# Additional Virtual Environments
+venv
+.env
+
+# Logs
+*.log
+logs/
+
+# IDEs and Editors
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Project specific (Uploads, temporary data)
+uploads/
+data/
